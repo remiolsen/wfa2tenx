@@ -2,6 +2,7 @@ import sys
 import re
 import gzip
 import io
+import os
 import argparse
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
 from itertools import cycle
@@ -91,7 +92,7 @@ def main(tenxfile, r1, r2, prefix):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Translate WFA barcodes to 10X barcodes")
-    parser.add_argument('--tenx-bc-file', type=str, default="data/4M-with-alts-february-2016.txt", help="Path to text file with 10X barcodes (eg. 4M-with-alts-february-2016.txt)")
+    parser.add_argument('--tenx-bc-file', type=str, default="{}/supernova/tenkit/lib/python/tenkit/barcodes/4M-with-alts-february-2016.txt".format(os.path.dirname(os.path.realpath(__file__))), help="Path to text file with 10X barcodes (eg. 4M-with-alts-february-2016.txt)")
     parser.add_argument('--wfa-r1', type=str, required=True, help="Path to read 1")
     parser.add_argument('--wfa-r2', type=str, required=True, help="Path to read 2")
     parser.add_argument('--out-prefix', type=str, default="WFA_OUT_S1_L001_", help="Prefix of the output fastq files (default: WFA_OUT_S1_L001_)")
