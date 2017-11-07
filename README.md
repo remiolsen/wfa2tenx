@@ -5,7 +5,7 @@ Highly experimental code to translate WFA to tenx barcodes
 # Requirements
 
 * [pigz](http://www.zlib.net/pigz/)
-* python >= 2.7
+* python >= 3.2
 * biopython 
   * `pip install biopython`
 * tenx barcode file `4M-with-alts-february-2016.txt` 
