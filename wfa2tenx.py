@@ -7,7 +7,7 @@ import argparse
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
 from itertools import cycle
 
-WFA = re.compile(" ([ATGC]{20})")
+WFA = re.compile(" ([ATGCN]{20})")
 # 10X index kit
 SIP02F8 = ["CATGAACA","TCACTCGC","AGCTGGAT","GTGACTTG"]
 # "Random" 7 bp oligo
@@ -34,23 +34,23 @@ def write_read1(wfamap, tenx, read, prefix, procs):
             stdout=subprocess.PIPE, bufsize=gz_buf) as fzi:
         fi = io.TextIOWrapper(fzi.stdout, write_through=True)
         with open(prefix+"R1_001.fastq.gz", 'wb') as ofile:
-            oz = subprocess.Popen(["pigz", "-c", "-p", p_split],
-                    stdin=subprocess.PIPE, stdout=ofile, bufsize=gz_buf, close_fds=False)
-            for title, seq, qual in FastqGeneralIterator(fi):
-                tarr = title.split()
-                try:
-                    wfa_bc = tenx[wfamap[tarr[1]]]
-                except KeyError:
-                    wfa_bc = r1_nbc
-                    #print("No barcode in file {} in read {}, inserting Ns".format(read, title), file=sys.stderr)
-                except IndexError:
-                    raise
+            with subprocess.Popen(["pigz", "-c", "-p", p_split],
+                    stdin=subprocess.PIPE, stdout=ofile, bufsize=gz_buf, close_fds=False) as oz:
+                for title, seq, qual in FastqGeneralIterator(fi):
+                    tarr = title.split()
+                    try:
+                        wfa_bc = tenx[wfamap[tarr[1]]]
+                    except KeyError:
+                        wfa_bc = r1_nbc
+                        #print("No barcode in file {} in read {}, inserting Ns".format(read, title), file=sys.stderr)
+                    except IndexError:
+                        raise
 
-                outln = "@{} 1:N:0:{}\n".format(tarr[0], next(idx_loop))
-                outln += "{}{}{}\n".format(wfa_bc, oligo, seq)
-                outln += "+\n"
-                outln += "{}{}\n".format(r1_qual, qual)
-                oz.stdin.write(outln.encode('utf-8'))
+                    outln = "@{} 1:N:0:{}\n".format(tarr[0], next(idx_loop))
+                    outln += "{}{}{}\n".format(wfa_bc, oligo, seq)
+                    outln += "+\n"
+                    outln += "{}{}\n".format(r1_qual, qual)
+                    oz.stdin.write(outln.encode('utf-8'))
 
 def write_read2(wfamap, tenx, read, prefix, procs):
     idx_loop = cycle(SIP02F8)
@@ -59,15 +59,15 @@ def write_read2(wfamap, tenx, read, prefix, procs):
             stdout=subprocess.PIPE, bufsize=gz_buf) as fzi:
         fi = io.TextIOWrapper(fzi.stdout, write_through=True)
         with open(prefix+"R2_001.fastq.gz", 'wb') as ofile:
-            oz = subprocess.Popen(["pigz", "-c", "-p", p_split],
-                    stdin=subprocess.PIPE, stdout=ofile, bufsize=gz_buf, close_fds=False)
-            for title, seq, qual in FastqGeneralIterator(fi):
-                tarr = title.split()
-                outln = "@{} 2:N:0:{}\n".format(tarr[0], next(idx_loop))
-                outln += "{}\n".format(seq)
-                outln += "+\n"
-                outln += "{}\n".format(qual)
-                oz.stdin.write(outln.encode('utf-8'))
+            with subprocess.Popen(["pigz", "-c", "-p", p_split],
+                    stdin=subprocess.PIPE, stdout=ofile, bufsize=gz_buf, close_fds=False) as oz:
+                for title, seq, qual in FastqGeneralIterator(fi):
+                    tarr = title.split()
+                    outln = "@{} 2:N:0:{}\n".format(tarr[0], next(idx_loop))
+                    outln += "{}\n".format(seq)
+                    outln += "+\n"
+                    outln += "{}\n".format(qual)
+                    oz.stdin.write(outln.encode('utf-8'))
 
 def write_i1(wfamap, tenx, read, prefix, procs):
     idx_loop = cycle(SIP02F8)
@@ -76,16 +76,16 @@ def write_i1(wfamap, tenx, read, prefix, procs):
             stdout=subprocess.PIPE, bufsize=gz_buf) as fzi:
         fi = io.TextIOWrapper(fzi.stdout, write_through=True)
         with open(prefix+"I1_001.fastq.gz", 'wb') as ofile:
-            oz = subprocess.Popen(["pigz", "-c", "-p", p_split],
-                    stdin=subprocess.PIPE, stdout=ofile, bufsize=gz_buf, close_fds=False)
-            for title, seq, qual in FastqGeneralIterator(fi):
-                tarr = title.split()
-                idx_i = next(idx_loop)
-                outln = "@{} 1:N:0:{}\n".format(tarr[0], idx_i)
-                outln += "{}\n".format(idx_i)
-                outln += "+\n"
-                outln += "{}\n".format(i1_qual)
-                oz.stdin.write(outln.encode('utf-8'))
+            with subprocess.Popen(["pigz", "-c", "-p", p_split],
+                    stdin=subprocess.PIPE, stdout=ofile, bufsize=gz_buf, close_fds=False) as oz:
+                for title, seq, qual in FastqGeneralIterator(fi):
+                    tarr = title.split()
+                    idx_i = next(idx_loop)
+                    outln = "@{} 1:N:0:{}\n".format(tarr[0], idx_i)
+                    outln += "{}\n".format(idx_i)
+                    outln += "+\n"
+                    outln += "{}\n".format(i1_qual)
+                    oz.stdin.write(outln.encode('utf-8'))
 ### END DRY-principle violating code-block
 
 def main(tenxfile, r1, r2, prefix, total_processes, minbc):
