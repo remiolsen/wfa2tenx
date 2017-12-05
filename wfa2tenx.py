@@ -8,7 +8,7 @@ from Bio.SeqIO.QualityIO import FastqGeneralIterator
 from itertools import cycle
 
 WFA1 = re.compile(" ([ATGCN]{20})$")
-WFA2 = re.compile("_([ATGCN]{20}_)")
+WFA2 = re.compile("(RG:Z:(\d*)\/)")
 class WFAc:
     def __init__(self, obj): self.obj = obj
     def get(self):    return self.obj
