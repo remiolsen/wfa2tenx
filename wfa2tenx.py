@@ -8,7 +8,7 @@ from Bio.SeqIO.QualityIO import FastqGeneralIterator
 from itertools import cycle
 
 WFA1 = re.compile(" ([ATGCN]{20})$")
-WFA2 = re.compile("(RG:Z:(\d*)\/)")
+WFA2 = re.compile("RG:Z:(\d*)")
 class WFAc:
     def __init__(self, obj): self.obj = obj
     def get(self):    return self.obj
@@ -102,7 +102,6 @@ def main(tenxfile, r1, r2, prefix, total_processes, minbc, v1):
     TENX_BC = []
     wfamap = {}
     wfamap_c = {}
-
     if v1:
         WFA.set(WFA1)
 
@@ -116,7 +115,7 @@ def main(tenxfile, r1, r2, prefix, total_processes, minbc, v1):
         with io.TextIOWrapper(fz.stdout, write_through=True) as f:
             for title, _, _ in FastqGeneralIterator(f):
                 tarr = WFA.get().split(title)
-                if len(tarr) > 1 and tarr[1] not in wfamap.keys():
+                if len(tarr) > 1 and tarr[1] is not '' and tarr[1] not in wfamap.keys():
                     wfamap_c[tarr[1]] = wfamap_c.get(tarr[1], 0) + 1
 
     nrbc = len(wfamap_c)
