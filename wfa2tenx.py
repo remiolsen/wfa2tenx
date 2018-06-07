@@ -4,6 +4,7 @@ import io
 import os
 import subprocess
 import argparse
+import json
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
 from itertools import cycle
 
@@ -16,7 +17,7 @@ class WFAc:
 
 WFA = WFAc(WFA2)
 
-# 10X index kit
+# 10X index kit to use as default
 SIP02F8 = ["CATGAACA","TCACTCGC","AGCTGGAT","GTGACTTG"]
 # "Random" 7 bp oligo
 oligo = "TTGCGAG"
@@ -33,10 +34,19 @@ except OSError as e:
     else:
         raise
 
+ilmnbc = {}
+ilmnbc_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "ilmn_indices.json")
+try:
+    with open(ilmnbc_file, "r") as f:
+        ilmnbc = json.load(f)
+except (IOError, ValueError):
+    print("Error parsing the file 'ilmn_indices.json' will only use SI-P02-F8 barcode set")
+    ilmnbc["SI-P02-F8"] = SIP02F8
+
 
 ### START DRY-principle violating code-block
-def write_read1(wfamap, tenx, read, prefix, procs):
-    idx_loop = cycle(SIP02F8)
+def write_read1(wfamap, tenx, read, prefix, procs, tenx_kit):
+    idx_loop = cycle(ilmnbc[tenx_kit])
     p_split = str(int(int(procs) / 2))
     with subprocess.Popen(["pigz", "-d", "-c", "-p", p_split, read],
             stdout=subprocess.PIPE, bufsize=gz_buf) as fzi:
@@ -60,8 +70,8 @@ def write_read1(wfamap, tenx, read, prefix, procs):
                     outln += "{}{}\n".format(r1_qual, qual)
                     oz.stdin.write(outln.encode('utf-8'))
 
-def write_read2(wfamap, tenx, read, prefix, procs):
-    idx_loop = cycle(SIP02F8)
+def write_read2(wfamap, tenx, read, prefix, procs, tenx_kit):
+    idx_loop = cycle(ilmnbc[tenx_kit])
     p_split = str(int(int(procs) / 2))
     with subprocess.Popen(["pigz", "-d", "-c", "-p", p_split, read],
             stdout=subprocess.PIPE, bufsize=gz_buf) as fzi:
@@ -77,8 +87,8 @@ def write_read2(wfamap, tenx, read, prefix, procs):
                     outln += "{}\n".format(qual)
                     oz.stdin.write(outln.encode('utf-8'))
 
-def write_i1(wfamap, tenx, read, prefix, procs):
-    idx_loop = cycle(SIP02F8)
+def write_i1(wfamap, tenx, read, prefix, procs, tenx_kit):
+    idx_loop = cycle(ilmnbc[tenx_kit])
     p_split = str(int(int(procs) / 2))
     with subprocess.Popen(["pigz", "-d", "-c", "-p", p_split, read],
             stdout=subprocess.PIPE, bufsize=gz_buf) as fzi:
@@ -96,12 +106,17 @@ def write_i1(wfamap, tenx, read, prefix, procs):
                     oz.stdin.write(outln.encode('utf-8'))
 ### END DRY-principle violating code-block
 
-def main(tenxfile, r1, r2, prefix, total_processes, minbc, v1):
+def main(tenxfile, r1, r2, prefix, total_processes, minbc, v1, tenx_kit):
     idx = 0
     tenx_c = 0
     TENX_BC = []
     wfamap = {}
     wfamap_c = {}
+
+    if tenx_kit not in ilmnbc.keys():
+        print("Did not find 10X kit {}".format(tenx_kit))
+        return
+
     if v1:
         WFA.set(WFA1)
 
@@ -127,9 +142,9 @@ def main(tenxfile, r1, r2, prefix, total_processes, minbc, v1):
     
     print("Found:\t{} WFA barcodes".format(len(wfamap_c.keys())))
     print("Made:\t{} 10X barcodes".format(idx))
-    write_read1(wfamap, TENX_BC, r1, prefix, total_processes)
-    write_read2(wfamap, TENX_BC, r2, prefix, total_processes)
-    write_i1(wfamap, TENX_BC, r1, prefix, total_processes)
+    write_read1(wfamap, TENX_BC, r1, prefix, total_processes, tenx_kit)
+    write_read2(wfamap, TENX_BC, r2, prefix, total_processes, tenx_kit)
+    write_i1(wfamap, TENX_BC, r1, prefix, total_processes, tenx_kit)
 
 
 if __name__ == "__main__":
@@ -141,6 +156,7 @@ if __name__ == "__main__":
     parser.add_argument('--processes', '-p', type=str, default=2, help="Number of processes to spawn (default: 2)")
     parser.add_argument('--min-bc', '-m', type=int, default=1, help="Minumum barcode multiplicity to include it")
     parser.add_argument('--v1', action='store_true', help="Look for an older format of wfa tags in fastq files, i.e. r' ([ATGCN]{20})$' ")
+    parser.add_argument('--tenx-kit', '-k', default='SI-P02-F8', help="Which 10X barcode kit the converted files should use")
     args = parser.parse_args()
-    sys.exit(main(args.tenx_bc_file, args.wfa_r1, args.wfa_r2, args.out_prefix, args.processes, args.min_bc, args.v1))
+    sys.exit(main(args.tenx_bc_file, args.wfa_r1, args.wfa_r2, args.out_prefix, args.processes, args.min_bc, args.v1, args.tenx_kit))
 
