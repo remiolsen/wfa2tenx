@@ -5,6 +5,7 @@ import os
 import subprocess
 import argparse
 import json
+import math
 from Bio.SeqIO.QualityIO import FastqGeneralIterator
 from itertools import cycle
 
@@ -106,12 +107,80 @@ def write_i1(wfamap, tenx, read, prefix, procs, tenx_kit):
                     oz.stdin.write(outln.encode('utf-8'))
 ### END DRY-principle violating code-block
 
-def main(tenxfile, r1, r2, prefix, total_processes, minbc, v1, tenx_kit):
+
+### Don't repeat myself? Hold my beer!
+def write_read1p(wfamap, wfareads, tenx, read, prefix, procs, tenx_kit):
+    idx_loop = cycle(ilmnbc[tenx_kit])
+    p_split = str(int(int(procs) / 2))
+    with subprocess.Popen(["pigz", "-d", "-c", "-p", p_split, read],
+            stdout=subprocess.PIPE, bufsize=gz_buf) as fzi:
+        fi = io.TextIOWrapper(fzi.stdout, write_through=True)
+        with open(prefix+"R1_001.fastq.gz", 'wb') as ofile:
+            with subprocess.Popen(["pigz", "-c", "-p", p_split],
+                    stdin=subprocess.PIPE, stdout=ofile, bufsize=gz_buf, close_fds=False) as oz:
+                for title, seq, qual in FastqGeneralIterator(fi):
+                    tarr = WFA.get().split(title)
+                    try:
+                        wfa_bc = tenx[wfamap[tarr[1]]]
+                    except KeyError:
+                        wfa_bc = r1_nbc
+                        #print("No barcode in file {} in read {}, inserting Ns".format(read, title), file=sys.stderr)
+                    except IndexError:
+                        raise
+                    if tarr[0] in wfareads.keys():
+                        outln = "@{} 1:N:0:{}\n".format(tarr[0], next(idx_loop))
+                        outln += "{}{}{}\n".format(wfa_bc, oligo, seq)
+                        outln += "+\n"
+                        outln += "{}{}\n".format(r1_qual, qual)
+                        oz.stdin.write(outln.encode('utf-8'))
+
+def write_read2p(wfamap, wfareads, tenx, read, prefix, procs, tenx_kit):
+    idx_loop = cycle(ilmnbc[tenx_kit])
+    p_split = str(int(int(procs) / 2))
+    with subprocess.Popen(["pigz", "-d", "-c", "-p", p_split, read],
+            stdout=subprocess.PIPE, bufsize=gz_buf) as fzi:
+        fi = io.TextIOWrapper(fzi.stdout, write_through=True)
+        with open(prefix+"R2_001.fastq.gz", 'wb') as ofile:
+            with subprocess.Popen(["pigz", "-c", "-p", p_split],
+                    stdin=subprocess.PIPE, stdout=ofile, bufsize=gz_buf, close_fds=False) as oz:
+                for title, seq, qual in FastqGeneralIterator(fi):
+                    tarr = WFA.get().split(title)
+                    if tarr[0] in wfareads.keys():
+                        outln = "@{} 2:N:0:{}\n".format(tarr[0], next(idx_loop))
+                        outln += "{}\n".format(seq)
+                        outln += "+\n"
+                        outln += "{}\n".format(qual)
+                        oz.stdin.write(outln.encode('utf-8'))
+
+def write_i1p(wfamap, wfareads, tenx, read, prefix, procs, tenx_kit):
+    idx_loop = cycle(ilmnbc[tenx_kit])
+    p_split = str(int(int(procs) / 2))
+    with subprocess.Popen(["pigz", "-d", "-c", "-p", p_split, read],
+            stdout=subprocess.PIPE, bufsize=gz_buf) as fzi:
+        fi = io.TextIOWrapper(fzi.stdout, write_through=True)
+        with open(prefix+"I1_001.fastq.gz", 'wb') as ofile:
+            with subprocess.Popen(["pigz", "-c", "-p", p_split],
+                    stdin=subprocess.PIPE, stdout=ofile, bufsize=gz_buf, close_fds=False) as oz:
+                for title, seq, qual in FastqGeneralIterator(fi):
+                    tarr = WFA.get().split(title)
+                    if tarr[0] in wfareads.keys():
+                        idx_i = next(idx_loop)
+                        outln = "@{} 1:N:0:{}\n".format(tarr[0], idx_i)
+                        outln += "{}\n".format(idx_i)
+                        outln += "+\n"
+                        outln += "{}\n".format(i1_qual)
+                        oz.stdin.write(outln.encode('utf-8'))
+### END DRY-principle violating code-block
+
+def main(tenxfile, r1, r2, prefix, total_processes, minbc, v1, tenx_kit, max_bc_split):
     idx = 0
     tenx_c = 0
     TENX_BC = []
+    wfamaps = []
+    wfareads = []
     wfamap = {}
     wfamap_c = {}
+    wfamap_r = {}
 
     if tenx_kit not in ilmnbc.keys():
         print("Did not find 10X kit {}".format(tenx_kit))
@@ -132,19 +201,66 @@ def main(tenxfile, r1, r2, prefix, total_processes, minbc, v1, tenx_kit):
                 tarr = WFA.get().split(title)
                 if len(tarr) > 1 and tarr[1] is not '' and tarr[1] not in wfamap.keys():
                     wfamap_c[tarr[1]] = wfamap_c.get(tarr[1], 0) + 1
+                if len(tarr) > 1 and tarr[1] is not '' and tarr[1] is not None:
+                    to_map = wfamap_r.get(tarr[1], [])
+                    to_map.append(tarr[0])
+                    wfamap_r[tarr[1]] = to_map
+                else:
+                    wfamap_c["nobc"] = 1
+                    to_map = wfamap_r.get("nobc", [])
+                    to_map.append(tarr[0])
+                    wfamap_r["nobc"] = to_map
 
     nrbc = len(wfamap_c)
-    for key, count in wfamap_c.items():
-        assert idx <= tenx_c, "Found more barcodes that available for 10X ({}), try using --min-bc argument".format(tenx_c)
-        if count >= minbc:
-            wfamap[key] = idx
-            idx += 1
-    
-    print("Found:\t{} WFA barcodes".format(len(wfamap_c.keys())))
-    print("Made:\t{} 10X barcodes".format(idx))
-    write_read1(wfamap, TENX_BC, r1, prefix, total_processes, tenx_kit)
-    write_read2(wfamap, TENX_BC, r2, prefix, total_processes, tenx_kit)
-    write_i1(wfamap, TENX_BC, r1, prefix, total_processes, tenx_kit)
+    if max_bc_split > 0:
+        chl = []
+        remainder = []
+        # split out wfa-10x bc pairs into chunks determined by max_mc_split. Keep unbarcoded as remainer
+        for key, count in wfamap_c.items():
+            if count >= minbc:
+                chl.append((key, count))
+            else:
+                remainder.append((key, count))
+
+        chunks = [chl[x:x+max_bc_split] for x in range(0, len(chl), max_bc_split)]
+        # create wfamap dict for writing new read triplets. Add discarded remainers to the first chunk
+        for ic, chunk in enumerate(chunks):
+            idx = 0
+            wfamap = {}; readmap = {}
+            for key, count in chunk:
+                wfamap[key] = idx
+                idx += 1
+                readmap[key] = wfamap_r[key]
+            wfamaps.append(wfamap)
+            wfareads.append(readmap)
+        wfareads[0]["nobc"] = []
+        for key, count in remainder:
+            wfareads[0]["nobc"].extend(wfamap_r[key])
+    else:
+        for key, count in wfamap_c.items():
+            assert idx <= tenx_c, "Found more barcodes that available for 10X ({}), try using --min-bc argument".format(tenx_c)
+            if count >= minbc:
+                wfamap[key] = idx
+                idx += 1
+
+    if max_bc_split > 0:
+        print("Found:\t{} WFA barcodes".format(len(wfamap_c.keys())))
+        print("Will make {} 10X libraries".format(len(wfamaps)))
+        for i, wfamap in enumerate(wfamaps):
+            treads = [i for su,sl in wfareads[i].items() for i in sl]
+            reads = {i: 0 for i in treads}
+            cprefix = "{}_{}".format(str(i+1).zfill(3),prefix)
+            print("part {}:\t{} 10X barcodes,\t{} reads".format(i+1, len(wfamaps[i]), len(treads)))
+            write_read1p(wfamaps[i], reads, TENX_BC, r1, cprefix, total_processes, tenx_kit)
+            write_read2p(wfamaps[i], reads, TENX_BC, r2, cprefix, total_processes, tenx_kit)
+            write_i1p(wfamaps[i], reads, TENX_BC, r1, cprefix, total_processes, tenx_kit)
+
+    else:
+        print("Found:\t{} WFA barcodes".format(len(wfamap_c.keys())))
+        print("Made:\t{} 10X barcodes".format(idx))
+        write_read1(wfamap, TENX_BC, r1, prefix, total_processes, tenx_kit)
+        write_read2(wfamap, TENX_BC, r2, prefix, total_processes, tenx_kit)
+        write_i1(wfamap, TENX_BC, r1, prefix, total_processes, tenx_kit)
 
 
 if __name__ == "__main__":
@@ -155,8 +271,8 @@ if __name__ == "__main__":
     parser.add_argument('--out-prefix', '-o', type=str, default="WFA_OUT_S1_L001_", help="Prefix of the output fastq files (default: WFA_OUT_S1_L001_)")
     parser.add_argument('--processes', '-p', type=str, default=2, help="Number of processes to spawn (default: 2)")
     parser.add_argument('--min-bc', '-m', type=int, default=1, help="Minumum barcode multiplicity to include it")
+    parser.add_argument('--max-bc-split', '-s', type=int, default=0, help="Set a threshold of maximum 10X barcodes per file. If it exceeds this, additional files ('libraries') will be output. Leave this as 0 for only one set of output files.")
     parser.add_argument('--v1', action='store_true', help="Look for an older format of wfa tags in fastq files, i.e. r' ([ATGCN]{20})$' ")
     parser.add_argument('--tenx-kit', '-k', default='SI-P02-F8', help="Which 10X barcode kit the converted files should use")
     args = parser.parse_args()
-    sys.exit(main(args.tenx_bc_file, args.wfa_r1, args.wfa_r2, args.out_prefix, args.processes, args.min_bc, args.v1, args.tenx_kit))
-
+    sys.exit(main(args.tenx_bc_file, args.wfa_r1, args.wfa_r2, args.out_prefix, args.processes, args.min_bc, args.v1, args.tenx_kit, args.max_bc_split))
