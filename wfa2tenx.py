@@ -11,12 +11,13 @@ from itertools import cycle
 
 WFA1 = re.compile(" ([ATGCN]{20})$")
 WFA2 = re.compile("RG:Z:(\d*)")
+WFA3 = re.compile("_BC:Z:(\d*)")
 class WFAc:
     def __init__(self, obj): self.obj = obj
     def get(self):    return self.obj
     def set(self, obj):      self.obj = obj
 
-WFA = WFAc(WFA2)
+WFA = WFAc(WFA3)
 
 # 10X index kit to use as default
 SIP02F8 = ["CATGAACA","TCACTCGC","AGCTGGAT","GTGACTTG"]
@@ -63,7 +64,7 @@ def write_read1(wfamap, tenx, read, prefix, procs, tenx_kit):
                         wfa_bc = r1_nbc
                         #print("No barcode in file {} in read {}, inserting Ns".format(read, title), file=sys.stderr)
                     except IndexError:
-                        raise
+                        pass
 
                     outln = "@{} 1:N:0:{}\n".format(tarr[0], next(idx_loop))
                     outln += "{}{}{}\n".format(wfa_bc, oligo, seq)
@@ -126,7 +127,8 @@ def write_read1p(wfamap, wfareads, tenx, read, prefix, procs, tenx_kit):
                         wfa_bc = r1_nbc
                         #print("No barcode in file {} in read {}, inserting Ns".format(read, title), file=sys.stderr)
                     except IndexError:
-                        raise
+                        wfa_bc = r1_nbc
+
                     if tarr[0] in wfareads.keys():
                         outln = "@{} 1:N:0:{}\n".format(tarr[0], next(idx_loop))
                         outln += "{}{}{}\n".format(wfa_bc, oligo, seq)
@@ -145,7 +147,7 @@ def write_read2p(wfamap, wfareads, tenx, read, prefix, procs, tenx_kit):
                     stdin=subprocess.PIPE, stdout=ofile, bufsize=gz_buf, close_fds=False) as oz:
                 for title, seq, qual in FastqGeneralIterator(fi):
                     tarr = WFA.get().split(title)
-                    if tarr[0] in wfareads.keys():
+                    if tarr[0] in wfareads.keys() or tarr[0][:-2]+"/1" in wfareads.keys():
                         outln = "@{} 2:N:0:{}\n".format(tarr[0], next(idx_loop))
                         outln += "{}\n".format(seq)
                         outln += "+\n"
@@ -172,7 +174,7 @@ def write_i1p(wfamap, wfareads, tenx, read, prefix, procs, tenx_kit):
                         oz.stdin.write(outln.encode('utf-8'))
 ### END DRY-principle violating code-block
 
-def main(tenxfile, r1, r2, prefix, total_processes, minbc, v1, tenx_kit, max_bc_split):
+def main(tenxfile, r1, r2, prefix, total_processes, minbc, v1, v2, tenx_kit, max_bc_split):
     idx = 0
     tenx_c = 0
     TENX_BC = []
@@ -188,6 +190,8 @@ def main(tenxfile, r1, r2, prefix, total_processes, minbc, v1, tenx_kit, max_bc_
 
     if v1:
         WFA.set(WFA1)
+    if v2:
+        WFA.set(WFA2)
 
     with open(tenxfile, 'r') as f:
         for line in f:
@@ -273,6 +277,7 @@ if __name__ == "__main__":
     parser.add_argument('--min-bc', '-m', type=int, default=1, help="Minumum barcode multiplicity to include it")
     parser.add_argument('--max-bc-split', '-s', type=int, default=0, help="Set a threshold of maximum 10X barcodes per file. If it exceeds this, additional files ('libraries') will be output. Leave this as 0 for only one set of output files.")
     parser.add_argument('--v1', action='store_true', help="Look for an older format of wfa tags in fastq files, i.e. r' ([ATGCN]{20})$' ")
+    parser.add_argument('--v2', action='store_true', help="Look for an older format of wfa tags in fastq files, i.e. r' (RG:Z:(\d*))$' ")
     parser.add_argument('--tenx-kit', '-k', default='SI-P02-F8', help="Which 10X barcode kit the converted files should use")
     args = parser.parse_args()
-    sys.exit(main(args.tenx_bc_file, args.wfa_r1, args.wfa_r2, args.out_prefix, args.processes, args.min_bc, args.v1, args.tenx_kit, args.max_bc_split))
+    sys.exit(main(args.tenx_bc_file, args.wfa_r1, args.wfa_r2, args.out_prefix, args.processes, args.min_bc, args.v1, args.v2, args.tenx_kit, args.max_bc_split))
